@@ -130,23 +130,26 @@ MIT Licensed. See [LICENSE](https://github.com/terraform-aws-modules/terraform-a
 | map\_roles\_count | The count of roles in the map_roles list. | string | `"0"` | no |
 | map\_users | Additional IAM users to add to the aws-auth configmap. See examples/eks_test_fixture/variables.tf for example format. | list | `[]` | no |
 | map\_users\_count | The count of roles in the map_users list. | string | `"0"` | no |
+| permissions\_boundary | If provided, all IAM roles will be created with this permissions boundary attached. | string | `""` | no |
 | subnets | A list of subnets to place the EKS cluster and workers within. | list | n/a | yes |
 | tags | A map of tags to add to all resources. | map | `{}` | no |
 | vpc\_id | VPC where the cluster and workers will be deployed. | string | n/a | yes |
 | worker\_additional\_security\_group\_ids | A list of additional security group ids to attach to worker instances | list | `[]` | no |
+| worker\_ami\_name\_filter | Additional name filter for AWS EKS worker AMI. Default behaviour will get latest for the cluster_version but could be set to a release from amazon-eks-ami, e.g. "v20190220" | string | `"v*"` | no |
 | worker\_create\_security\_group | Whether to create a security group for the workers or attach the workers to `worker_security_group_id`. | string | `"true"` | no |
 | worker\_group\_count | The number of maps contained within the worker_groups list. | string | `"1"` | no |
 | worker\_group\_launch\_template\_count | The number of maps contained within the worker_groups_launch_template list. | string | `"0"` | no |
-| worker\_group\_launch\_template\_tags | A map defining extra tags to be applied to the worker group template ASG. | map | `<map>` | no |
-| worker\_group\_tags | A map defining extra tags to be applied to the worker group ASG. | map | `<map>` | no |
+| worker\_group\_launch\_template\_tags | A map defining extra tags to be applied to the worker group template ASG. | map | `{ "default": [] }` | no |
+| worker\_group\_tags | A map defining extra tags to be applied to the worker group ASG. | map | `{ "default": [] }` | no |
 | worker\_groups | A list of maps defining worker group configurations to be defined using AWS Launch Configurations. See workers_group_defaults for valid keys. | list | `[ { "name": "default" } ]` | no |
 | worker\_groups\_launch\_template | A list of maps defining worker group configurations to be defined using AWS Launch Templates. See workers_group_defaults for valid keys. | list | `[ { "name": "default" } ]` | no |
 | worker\_security\_group\_id | If provided, all workers will be attached to this security group. If not given, a security group will be created with necessary ingres/egress to work with the EKS cluster. | string | `""` | no |
 | worker\_sg\_ingress\_from\_port | Minimum port number from which pods will accept communication. Must be changed to a lower value if some pods in your cluster will expose a port lower than 1025 (e.g. 22, 80, or 443). | string | `"1025"` | no |
-| workers\_group\_defaults | Override default values for target groups. See workers_group_defaults_defaults in locals.tf for valid keys. | map | `{}` | no |
-| workers\_group\_launch\_template\_defaults | Override default values for target groups. See workers_group_defaults_defaults in locals.tf for valid keys. | map | `{}` | no |
+| workers\_group\_defaults | Override default values for target groups. See workers_group_defaults_defaults in local.tf for valid keys. | map | `{}` | no |
+| workers\_group\_launch\_template\_defaults | Override default values for target groups. See workers_group_defaults_defaults in local.tf for valid keys. | map | `{}` | no |
 | write\_aws\_auth\_config | Whether to write the aws-auth configmap file. | string | `"true"` | no |
 | write\_kubeconfig | Whether to write a Kubectl config file containing the cluster configuration. Saved to `config_output_path`. | string | `"true"` | no |
+| iam\_path | If provided, all IAM roles will be created with path. | string | `"/"` | no |
 
 ## Outputs
 
@@ -154,11 +157,14 @@ MIT Licensed. See [LICENSE](https://github.com/terraform-aws-modules/terraform-a
 |------|-------------|
 | cluster\_certificate\_authority\_data | Nested attribute containing certificate-authority-data for your cluster. This is the base64 encoded certificate data required to communicate with your cluster. |
 | cluster\_endpoint | The endpoint for your EKS Kubernetes API. |
+| cluster\_iam\_role\_arn | IAM role ARN of the EKS cluster. |
+| cluster\_iam\_role\_name | IAM role name of the EKS cluster. |
 | cluster\_id | The name/id of the EKS cluster. |
 | cluster\_security\_group\_id | Security group ID attached to the EKS cluster. |
 | cluster\_version | The Kubernetes server version for the EKS cluster. |
 | config\_map\_aws\_auth | A kubernetes configuration to authenticate to this EKS cluster. |
 | kubeconfig | kubectl config file contents for this EKS cluster. |
+| kubeconfig\_filename | The filename of the generated kubectl config. |
 | worker\_iam\_role\_arn | default IAM role ARN for EKS worker groups |
 | worker\_iam\_role\_name | default IAM role name for EKS worker groups |
 | worker\_security\_group\_id | Security group ID attached to the EKS workers. |

@@ -114,6 +114,8 @@ resource "aws_security_group_rule" "workers_ingress_cluster_https" {
 resource "aws_iam_role" "workers" {
   name_prefix           = "${aws_eks_cluster.this.name}"
   assume_role_policy    = "${data.aws_iam_policy_document.workers_assume_role_policy.json}"
+  permissions_boundary  = "${var.permissions_boundary}"
+  path                  = "${var.iam_path}"
   force_detach_policies = true
 }
 
@@ -121,6 +123,7 @@ resource "aws_iam_instance_profile" "workers" {
   name_prefix = "${aws_eks_cluster.this.name}"
   role        = "${lookup(var.worker_groups[count.index], "iam_role_id",  lookup(local.workers_group_defaults, "iam_role_id"))}"
   count       = "${var.worker_group_count}"
+  path        = "${var.iam_path}"
 }
 
 resource "aws_iam_role_policy_attachment" "workers_AmazonEKSWorkerNodePolicy" {
@@ -157,6 +160,7 @@ resource "aws_iam_policy" "worker_autoscaling" {
   name_prefix = "eks-worker-autoscaling-${aws_eks_cluster.this.name}"
   description = "EKS worker node autoscaling policy for cluster ${aws_eks_cluster.this.name}"
   policy      = "${data.aws_iam_policy_document.worker_autoscaling.json}"
+  path        = "${var.iam_path}"
 }
 
 data "aws_iam_policy_document" "worker_autoscaling" {
@@ -169,6 +173,7 @@ data "aws_iam_policy_document" "worker_autoscaling" {
       "autoscaling:DescribeAutoScalingInstances",
       "autoscaling:DescribeLaunchConfigurations",
       "autoscaling:DescribeTags",
+      "ec2:DescribeLaunchTemplateVersions",
     ]
 
     resources = ["*"]

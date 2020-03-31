@@ -73,6 +73,21 @@ resource "aws_autoscaling_group" "workers" {
     "termination_policies",
     local.workers_group_defaults["termination_policies"]
   )
+  max_instance_lifetime = lookup(
+    var.worker_groups[count.index],
+    "max_instance_lifetime",
+    local.workers_group_defaults["max_instance_lifetime"],
+  )
+  default_cooldown = lookup(
+    var.worker_groups[count.index],
+    "default_cooldown",
+    local.workers_group_defaults["default_cooldown"]
+  )
+  health_check_grace_period = lookup(
+    var.worker_groups[count.index],
+    "health_check_grace_period",
+    local.workers_group_defaults["health_check_grace_period"]
+  )
 
   dynamic "initial_lifecycle_hook" {
     for_each = var.worker_create_initial_lifecycle_hooks ? lookup(var.worker_groups[count.index], "asg_initial_lifecycle_hooks", local.workers_group_defaults["asg_initial_lifecycle_hooks"]) : []
@@ -103,29 +118,6 @@ resource "aws_autoscaling_group" "workers" {
         "key"                 = "k8s.io/cluster/${aws_eks_cluster.this[0].name}"
         "value"               = "owned"
         "propagate_at_launch" = true
-      },
-      {
-        "key" = "k8s.io/cluster-autoscaler/${lookup(
-          var.worker_groups[count.index],
-          "autoscaling_enabled",
-          local.workers_group_defaults["autoscaling_enabled"],
-        ) ? "enabled" : "disabled"}"
-        "value"               = "true"
-        "propagate_at_launch" = false
-      },
-      {
-        "key"                 = "k8s.io/cluster-autoscaler/${aws_eks_cluster.this[0].name}"
-        "value"               = aws_eks_cluster.this[0].name
-        "propagate_at_launch" = false
-      },
-      {
-        "key" = "k8s.io/cluster-autoscaler/node-template/resources/ephemeral-storage"
-        "value" = "${lookup(
-          var.worker_groups[count.index],
-          "root_volume_size",
-          local.workers_group_defaults["root_volume_size"],
-        )}Gi"
-        "propagate_at_launch" = false
       },
     ],
     local.asg_tags,
@@ -208,6 +200,11 @@ resource "aws_launch_configuration" "workers" {
   )
 
   root_block_device {
+    encrypted = lookup(
+      var.worker_groups[count.index],
+      "root_encrypted",
+      local.workers_group_defaults["root_encrypted"],
+    )
     volume_size = lookup(
       var.worker_groups[count.index],
       "root_volume_size",
@@ -224,6 +221,36 @@ resource "aws_launch_configuration" "workers" {
       local.workers_group_defaults["root_iops"],
     )
     delete_on_termination = true
+  }
+
+  dynamic "ebs_block_device" {
+    for_each = lookup(var.worker_groups[count.index], "additional_ebs_volumes", local.workers_group_defaults["additional_ebs_volumes"])
+
+    content {
+      device_name = ebs_block_device.value.block_device_name
+      volume_size = lookup(
+        ebs_block_device.value,
+        "volume_size",
+        local.workers_group_defaults["root_volume_size"],
+      )
+      volume_type = lookup(
+        ebs_block_device.value,
+        "volume_type",
+        local.workers_group_defaults["root_volume_type"],
+      )
+      iops = lookup(
+        ebs_block_device.value,
+        "iops",
+        local.workers_group_defaults["root_iops"],
+      )
+      encrypted = lookup(
+        ebs_block_device.value,
+        "encrypted",
+        local.workers_group_defaults["root_encrypted"],
+      )
+      delete_on_termination = lookup(ebs_block_device.value, "delete_on_termination", true)
+    }
+
   }
 
   lifecycle {
@@ -243,7 +270,7 @@ resource "random_pet" "workers" {
 }
 
 resource "aws_security_group" "workers" {
-  count       = var.worker_security_group_id == "" && var.create_eks ? 1 : 0
+  count       = var.worker_create_security_group && var.create_eks ? 1 : 0
   name_prefix = aws_eks_cluster.this[0].name
   description = "Security group for all nodes in the cluster."
   vpc_id      = var.vpc_id
@@ -257,7 +284,7 @@ resource "aws_security_group" "workers" {
 }
 
 resource "aws_security_group_rule" "workers_egress_internet" {
-  count             = var.worker_security_group_id == "" && var.create_eks ? 1 : 0
+  count             = var.worker_create_security_group && var.create_eks ? 1 : 0
   description       = "Allow nodes all egress to the Internet."
   protocol          = "-1"
   security_group_id = local.worker_security_group_id
@@ -268,7 +295,7 @@ resource "aws_security_group_rule" "workers_egress_internet" {
 }
 
 resource "aws_security_group_rule" "workers_ingress_self" {
-  count                    = var.worker_security_group_id == "" && var.create_eks ? 1 : 0
+  count                    = var.worker_create_security_group && var.create_eks ? 1 : 0
   description              = "Allow node to communicate with each other."
   protocol                 = "-1"
   security_group_id        = local.worker_security_group_id
@@ -279,7 +306,7 @@ resource "aws_security_group_rule" "workers_ingress_self" {
 }
 
 resource "aws_security_group_rule" "workers_ingress_cluster" {
-  count                    = var.worker_security_group_id == "" && var.create_eks ? 1 : 0
+  count                    = var.worker_create_security_group && var.create_eks ? 1 : 0
   description              = "Allow workers pods to receive communication from the cluster control plane."
   protocol                 = "tcp"
   security_group_id        = local.worker_security_group_id
@@ -290,7 +317,7 @@ resource "aws_security_group_rule" "workers_ingress_cluster" {
 }
 
 resource "aws_security_group_rule" "workers_ingress_cluster_kubelet" {
-  count                    = var.worker_security_group_id == "" && var.create_eks ? var.worker_sg_ingress_from_port > 10250 ? 1 : 0 : 0
+  count                    = var.worker_create_security_group && var.create_eks ? var.worker_sg_ingress_from_port > 10250 ? 1 : 0 : 0
   description              = "Allow workers Kubelets to receive communication from the cluster control plane."
   protocol                 = "tcp"
   security_group_id        = local.worker_security_group_id
@@ -301,7 +328,7 @@ resource "aws_security_group_rule" "workers_ingress_cluster_kubelet" {
 }
 
 resource "aws_security_group_rule" "workers_ingress_cluster_https" {
-  count                    = var.worker_security_group_id == "" && var.create_eks ? 1 : 0
+  count                    = var.worker_create_security_group && var.create_eks ? 1 : 0
   description              = "Allow pods running extension API servers on port 443 to receive communication from cluster control plane."
   protocol                 = "tcp"
   security_group_id        = local.worker_security_group_id
@@ -336,19 +363,19 @@ resource "aws_iam_instance_profile" "workers" {
 
 resource "aws_iam_role_policy_attachment" "workers_AmazonEKSWorkerNodePolicy" {
   count      = var.manage_worker_iam_resources && var.create_eks ? 1 : 0
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+  policy_arn = "${local.policy_arn_prefix}/AmazonEKSWorkerNodePolicy"
   role       = aws_iam_role.workers[0].name
 }
 
 resource "aws_iam_role_policy_attachment" "workers_AmazonEKS_CNI_Policy" {
   count      = var.manage_worker_iam_resources && var.attach_worker_cni_policy && var.create_eks ? 1 : 0
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+  policy_arn = "${local.policy_arn_prefix}/AmazonEKS_CNI_Policy"
   role       = aws_iam_role.workers[0].name
 }
 
 resource "aws_iam_role_policy_attachment" "workers_AmazonEC2ContainerRegistryReadOnly" {
   count      = var.manage_worker_iam_resources && var.create_eks ? 1 : 0
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+  policy_arn = "${local.policy_arn_prefix}/AmazonEC2ContainerRegistryReadOnly"
   role       = aws_iam_role.workers[0].name
 }
 
@@ -356,61 +383,4 @@ resource "aws_iam_role_policy_attachment" "workers_additional_policies" {
   count      = var.manage_worker_iam_resources && var.create_eks ? length(var.workers_additional_policies) : 0
   role       = aws_iam_role.workers[0].name
   policy_arn = var.workers_additional_policies[count.index]
-}
-
-resource "aws_iam_role_policy_attachment" "workers_autoscaling" {
-  count      = var.manage_worker_iam_resources && var.manage_worker_autoscaling_policy && var.attach_worker_autoscaling_policy && var.create_eks ? 1 : 0
-  policy_arn = aws_iam_policy.worker_autoscaling[0].arn
-  role       = aws_iam_role.workers[0].name
-}
-
-resource "aws_iam_policy" "worker_autoscaling" {
-  count       = var.manage_worker_iam_resources && var.manage_worker_autoscaling_policy && var.create_eks ? 1 : 0
-  name_prefix = "eks-worker-autoscaling-${aws_eks_cluster.this[0].name}"
-  description = "EKS worker node autoscaling policy for cluster ${aws_eks_cluster.this[0].name}"
-  policy      = data.aws_iam_policy_document.worker_autoscaling[0].json
-  path        = var.iam_path
-}
-
-data "aws_iam_policy_document" "worker_autoscaling" {
-  count = var.manage_worker_iam_resources && var.manage_worker_autoscaling_policy && var.create_eks ? 1 : 0
-  statement {
-    sid    = "eksWorkerAutoscalingAll"
-    effect = "Allow"
-
-    actions = [
-      "autoscaling:DescribeAutoScalingGroups",
-      "autoscaling:DescribeAutoScalingInstances",
-      "autoscaling:DescribeLaunchConfigurations",
-      "autoscaling:DescribeTags",
-      "ec2:DescribeLaunchTemplateVersions",
-    ]
-
-    resources = ["*"]
-  }
-
-  statement {
-    sid    = "eksWorkerAutoscalingOwn"
-    effect = "Allow"
-
-    actions = [
-      "autoscaling:SetDesiredCapacity",
-      "autoscaling:TerminateInstanceInAutoScalingGroup",
-      "autoscaling:UpdateAutoScalingGroup",
-    ]
-
-    resources = ["*"]
-
-    condition {
-      test     = "StringEquals"
-      variable = "autoscaling:ResourceTag/kubernetes.io/cluster/${aws_eks_cluster.this[0].name}"
-      values   = ["owned"]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "autoscaling:ResourceTag/k8s.io/cluster-autoscaler/enabled"
-      values   = ["true"]
-    }
-  }
 }

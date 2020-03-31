@@ -36,7 +36,7 @@ provider "kubernetes" {
   cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority.0.data)
   token                  = data.aws_eks_cluster_auth.cluster.token
   load_config_file       = false
-  version                = "~> 1.10"
+  version                = "~> 1.11"
 }
 
 data "aws_availability_zones" "available" {
@@ -60,10 +60,6 @@ module "vpc" {
   azs                  = data.aws_availability_zones.available.names
   public_subnets       = ["10.0.4.0/24", "10.0.5.0/24", "10.0.6.0/24"]
   enable_dns_hostnames = true
-
-  tags = {
-    "kubernetes.io/cluster/${local.cluster_name}" = "shared"
-  }
 }
 
 module "eks" {

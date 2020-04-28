@@ -8,6 +8,7 @@ locals {
         coalescelist(
           aws_iam_instance_profile.workers_launch_template.*.role,
           data.aws_iam_instance_profile.custom_worker_group_launch_template_iam_instance_profile.*.role_name,
+          [""]
         ),
         index
       )}"
@@ -47,13 +48,13 @@ locals {
     {
       rolearn  = role["worker_role_arn"]
       username = "system:node:{{EC2PrivateDNSName}}"
-      groups = concat(
+      groups = tolist(concat(
         [
           "system:bootstrappers",
           "system:nodes",
         ],
         role["platform"] == "windows" ? ["eks:kube-proxy-windows"] : []
-      )
+      ))
     }
   ]
 }

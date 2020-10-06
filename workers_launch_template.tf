@@ -37,6 +37,11 @@ resource "aws_autoscaling_group" "workers_launch_template" {
     "target_group_arns",
     local.workers_group_defaults["target_group_arns"]
   )
+  load_balancers = lookup(
+    var.worker_groups_launch_template[count.index],
+    "load_balancers",
+    local.workers_group_defaults["load_balancers"]
+  )
   service_linked_role_arn = lookup(
     var.worker_groups_launch_template[count.index],
     "service_linked_role_arn",
@@ -90,7 +95,7 @@ resource "aws_autoscaling_group" "workers_launch_template" {
 
   dynamic mixed_instances_policy {
     iterator = item
-    for_each = (lookup(var.worker_groups_launch_template[count.index], "override_instance_types", null) != null) || (lookup(var.worker_groups_launch_template[count.index], "on_demand_allocation_strategy", null) != null) ? list(var.worker_groups_launch_template[count.index]) : []
+    for_each = (lookup(var.worker_groups_launch_template[count.index], "override_instance_types", null) != null) || (lookup(var.worker_groups_launch_template[count.index], "on_demand_allocation_strategy", local.workers_group_defaults["on_demand_allocation_strategy"]) != null) ? list(var.worker_groups_launch_template[count.index]) : []
 
     content {
       instances_distribution {
@@ -151,9 +156,10 @@ resource "aws_autoscaling_group" "workers_launch_template" {
       }
     }
   }
+
   dynamic launch_template {
     iterator = item
-    for_each = (lookup(var.worker_groups_launch_template[count.index], "override_instance_types", null) != null) || (lookup(var.worker_groups_launch_template[count.index], "on_demand_allocation_strategy", null) != null) ? [] : list(var.worker_groups_launch_template[count.index])
+    for_each = (lookup(var.worker_groups_launch_template[count.index], "override_instance_types", null) != null) || (lookup(var.worker_groups_launch_template[count.index], "on_demand_allocation_strategy", local.workers_group_defaults["on_demand_allocation_strategy"]) != null) ? [] : list(var.worker_groups_launch_template[count.index])
 
     content {
       id = aws_launch_template.workers_launch_template.*.id[count.index]
@@ -178,30 +184,37 @@ resource "aws_autoscaling_group" "workers_launch_template" {
     }
   }
 
-  tags = concat(
-    [
-      {
-        "key" = "Name"
-        "value" = "${aws_eks_cluster.this[0].name}-${lookup(
-          var.worker_groups_launch_template[count.index],
-          "name",
-          count.index,
-        )}-eks_asg"
-        "propagate_at_launch" = true
-      },
-      {
-        "key"                 = "kubernetes.io/cluster/${aws_eks_cluster.this[0].name}"
-        "value"               = "owned"
-        "propagate_at_launch" = true
-      },
-    ],
-    local.asg_tags,
-    lookup(
-      var.worker_groups_launch_template[count.index],
-      "tags",
-      local.workers_group_defaults["tags"]
+  dynamic "tag" {
+    for_each = concat(
+      [
+        {
+          "key" = "Name"
+          "value" = "${aws_eks_cluster.this[0].name}-${lookup(
+            var.worker_groups_launch_template[count.index],
+            "name",
+            count.index,
+          )}-eks_asg"
+          "propagate_at_launch" = true
+        },
+        {
+          "key"                 = "kubernetes.io/cluster/${aws_eks_cluster.this[0].name}"
+          "value"               = "owned"
+          "propagate_at_launch" = true
+        },
+      ],
+      local.asg_tags,
+      lookup(
+        var.worker_groups_launch_template[count.index],
+        "tags",
+        local.workers_group_defaults["tags"]
+      )
     )
-  )
+    content {
+      key                 = tag.value.key
+      value               = tag.value.value
+      propagate_at_launch = tag.value.propagate_at_launch
+    }
+  }
 
   lifecycle {
     create_before_destroy = true
@@ -278,12 +291,33 @@ resource "aws_launch_template" "workers_launch_template" {
     )
   )
 
-  credit_specification {
-    cpu_credits = lookup(
+  metadata_options {
+    http_endpoint = lookup(
+      var.worker_groups_launch_template[count.index],
+      "metadata_http_endpoint",
+      local.workers_group_defaults["metadata_http_endpoint"],
+    )
+    http_tokens = lookup(
+      var.worker_groups_launch_template[count.index],
+      "metadata_http_tokens",
+      local.workers_group_defaults["metadata_http_tokens"],
+    )
+    http_put_response_hop_limit = lookup(
+      var.worker_groups_launch_template[count.index],
+      "metadata_http_put_response_hop_limit",
+      local.workers_group_defaults["metadata_http_put_response_hop_limit"],
+    )
+  }
+
+  dynamic "credit_specification" {
+    for_each = lookup(
       var.worker_groups_launch_template[count.index],
       "cpu_credits",
       local.workers_group_defaults["cpu_credits"]
-    )
+    ) != null ? [lookup(var.worker_groups_launch_template[count.index], "cpu_credits", local.workers_group_defaults["cpu_credits"])] : []
+    content {
+      cpu_credits = credit_specification.value
+    }
   }
 
   monitoring {
@@ -423,6 +457,22 @@ resource "aws_launch_template" "workers_launch_template" {
   lifecycle {
     create_before_destroy = true
   }
+
+  # Prevent premature access of security group roles and policies by pods that
+  # require permissions on create/destroy that depend on workers.
+  depends_on = [
+    aws_security_group_rule.workers_egress_internet,
+    aws_security_group_rule.workers_ingress_self,
+    aws_security_group_rule.workers_ingress_cluster,
+    aws_security_group_rule.workers_ingress_cluster_kubelet,
+    aws_security_group_rule.workers_ingress_cluster_https,
+    aws_security_group_rule.workers_ingress_cluster_primary,
+    aws_security_group_rule.cluster_primary_ingress_workers,
+    aws_iam_role_policy_attachment.workers_AmazonEKSWorkerNodePolicy,
+    aws_iam_role_policy_attachment.workers_AmazonEKS_CNI_Policy,
+    aws_iam_role_policy_attachment.workers_AmazonEC2ContainerRegistryReadOnly,
+    aws_iam_role_policy_attachment.workers_additional_policies
+  ]
 }
 
 resource "random_pet" "workers_launch_template" {
@@ -441,6 +491,9 @@ resource "random_pet" "workers_launch_template" {
         ]
       )
     )
+  }
+  lifecycle {
+    create_before_destroy = true
   }
 }
 

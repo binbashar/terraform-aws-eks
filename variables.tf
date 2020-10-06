@@ -28,7 +28,6 @@ variable "cluster_security_group_id" {
 variable "cluster_version" {
   description = "Kubernetes version to use for the EKS cluster."
   type        = string
-  default     = "1.16"
 }
 
 variable "config_output_path" {
@@ -201,7 +200,7 @@ variable "cluster_delete_timeout" {
 variable "wait_for_cluster_cmd" {
   description = "Custom local-exec command to execute for determining if the eks cluster is healthy. Cluster endpoint will be available as an environment variable called ENDPOINT"
   type        = string
-  default     = "for i in `seq 1 60`; do wget --no-check-certificate -O - -q $ENDPOINT/healthz >/dev/null && exit 0 || true; sleep 5; done; echo TIMEOUT && exit 1"
+  default     = "for i in `seq 1 60`; do if `command -v wget > /dev/null`; then wget --no-check-certificate -O - -q $ENDPOINT/healthz >/dev/null && exit 0 || true; else curl -k -s $ENDPOINT/healthz >/dev/null && exit 0 || true;fi; sleep 5; done; echo TIMEOUT && exit 1"
 }
 
 variable "wait_for_cluster_interpreter" {
@@ -246,10 +245,16 @@ variable "iam_path" {
   default     = "/"
 }
 
+variable "cluster_create_endpoint_private_access_sg_rule" {
+  description = "Whether to create security group rules for the access to the Amazon EKS private API server endpoint."
+  type        = bool
+  default     = false
+}
+
 variable "cluster_endpoint_private_access_cidrs" {
-  description = "List of CIDR blocks which can access the Amazon EKS private API server endpoint, when public access is disabled"
+  description = "List of CIDR blocks which can access the Amazon EKS private API server endpoint."
   type        = list(string)
-  default     = ["0.0.0.0/0"]
+  default     = null
 }
 
 variable "cluster_endpoint_private_access" {

@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [21.25.0](https://github.com/terraform-aws-modules/terraform-aws-eks/compare/v21.24.2...v21.25.0) (2026-08-14)
+
+### Features
+
+* Support cluster `kube_scheduler_config` ([#3741](https://github.com/terraform-aws-modules/terraform-aws-eks/issues/3741)) ([76524a2](https://github.com/terraform-aws-modules/terraform-aws-eks/commit/76524a21b323679f22484ddd98ce0ae90b707464))
+
 ## [21.24.2](https://github.com/terraform-aws-modules/terraform-aws-eks/compare/v21.24.1...v21.24.2) (2026-08-06)
 
 ### Bug Fixes
